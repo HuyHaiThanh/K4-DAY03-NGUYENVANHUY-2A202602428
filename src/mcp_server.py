@@ -10,7 +10,9 @@ from tools import TOOLS_SCHEMA, dispatch_tool_call
 
 if sys.stdout.encoding != 'utf-8':
     try:
-        sys.stdout.reconfigure(encoding='utf-8')
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding='utf-8')
     except Exception:
         pass
 
@@ -28,18 +30,37 @@ class MCPAcademicServer:
         
     def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
-        [TASK 2.1] HỌC VIÊN HOÀN THIỆN HÀM THỰC THI TOOL TRÊN MCP SERVER
-        Thực thi request gọi Tool theo chuẩn MCP JSON-RPC
+        Nhận yêu cầu gọi tool và đóng gói kết quả trả về cho ứng dụng.
+
+        tool_name: Tên tool đã khai báo trong schema, ví dụ "academic_query".
+        arguments: Dictionary chứa tham số, ví dụ {"student_id": "SV2026001"}.
+        Giá trị trả về là dictionary Python; ứng dụng có thể chuyển thành JSON.
         """
-        # --------------------------------------------------------------------------
-        # TODO 2.1: HỌC VIÊN HOÀN THIỆN HÀM GỌI TOOL CHUẨN MCP JSON-RPC
-        # 🎯 YÊU CẦU THỰC THI THUẬT TOÁN:
-        # 1. Gọi hàm dispatch_tool_call(tool_name, arguments) để lấy chuỗi JSON kết quả từ Tool Router.
-        # 2. Chuyển đổi chuỗi JSON kết quả thành Python Dictionary (dùng json.loads).
-        # 3. Đóng gói phản hồi và trả về Dict theo đúng chuẩn giao thức MCP JSON-RPC 2.0:
-        #    - Các trường bắt buộc: "jsonrpc": "2.0", "server": self.server_name, "tool": tool_name, "result": content
-        # --------------------------------------------------------------------------
-        return {}
+        # Bước 1: Nhờ hàm điều phối trong tools.py tìm hàm tương ứng qua TOOL_ROUTER.
+        # Hàm điều phối dùng **arguments để tách dictionary thành tham số có tên:
+        # {"student_id": "SV2026001"} -> execute_academic_query(student_id="SV2026001").
+        # Kết quả nhận được là CHUỖI JSON, kể cả khi router báo UNKNOWN_TOOL
+        # (không có tên tool) hoặc EXECUTION_ERROR (lỗi khi thực thi hàm).
+        result_json = dispatch_tool_call(tool_name, arguments)
+
+        # Bước 2: Chuyển chuỗi JSON thành dữ liệu Python để lồng vào phản hồi.
+        # Ví dụ: '{"status": "SUCCESS"}' -> {"status": "SUCCESS"}.
+        # json.loads chỉ giải mã JSON, không kiểm tra arguments theo tool schema.
+        # Nếu result_json không hợp lệ, lỗi giải mã sẽ truyền ra nơi gọi call_tool.
+        content = json.loads(result_json)
+
+        # Bước 3: Đóng gói phản hồi theo cấu trúc mô phỏng dùng trong bài lab.
+        # Đây chưa phải phản hồi JSON-RPC/MCP đầy đủ (ví dụ chưa có request id).
+        return {
+            # Nhãn phiên bản giao thức mà bài lab mô phỏng.
+            "jsonrpc": "2.0",
+            # Tên server xử lý yêu cầu, lấy từ lúc khởi tạo đối tượng.
+            "server": self.server_name,
+            # Tên tool vừa được yêu cầu thực thi.
+            "tool": tool_name,
+            # Dữ liệu đã giải mã, gồm kết quả thành công hoặc thông tin lỗi từ router.
+            "result": content
+        }
 
 
 if __name__ == "__main__":
